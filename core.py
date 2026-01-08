@@ -1,4 +1,5 @@
 import yt_dlp
+import streamlit as st
 import google.generativeai as genai
 import os
 import time
@@ -68,17 +69,29 @@ def get_latest_video_robust(channel_url):
     return None
 
 def download_audio(url):
+    # 增加更強的偽裝標頭
     ydl_opts = {
-        'format': 'worstaudio/worst',
+        'format': 'worstaudio/worst', # 下載最低畫質音訊以節省流量
         'outtmpl': 'temp_%(id)s.%(ext)s',
-        'postprocessors': [{'key': 'FFmpegExtractAudio','preferredcodec': 'mp3','preferredquality': '64'}],
-        'quiet': True, 'no_warnings': True
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '64'
+        }],
+        'quiet': False,  # 開啟 log 以便除錯
+        'no_warnings': False,
+        # 模擬一般瀏覽器請求
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'nocheckcertificate': True,
     }
+    
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             return pathlib.Path(f"temp_{info['id']}.mp3")
     except Exception as e:
+        # 關鍵修改：直接在前端顯示錯誤，讓你知道發生什麼事
+        st.error(f"⚠️ 下載核心錯誤: {str(e)}")
         print(f"Download Error: {e}")
         return None
 
@@ -144,4 +157,5 @@ def compare_trends(gooaye_report, miula_report):
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
+
         return f"對照分析失敗: {e}"
