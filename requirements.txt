@@ -1,0 +1,6 @@
+streamlit
+yt-dlp
+google-generativeai
+pandas
+markdown
+ffmpeg-python
