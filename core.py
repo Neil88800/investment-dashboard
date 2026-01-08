@@ -1,4 +1,5 @@
 import yt_dlp
+import tempfile
 import streamlit as st
 import google.generativeai as genai
 import os
@@ -69,30 +70,50 @@ def get_latest_video_robust(channel_url):
     return None
 
 def download_audio(url):
-    # 增加更強的偽裝標頭
+    cookie_path = None
+    
+    # 1. 檢查 Secrets 裡有沒有餅乾，有的話做成暫存檔
+    if "youtube_cookies" in st.secrets:
+        # 建立一個暫存檔案來放餅乾
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+            f.write(st.secrets["youtube_cookies"])
+            cookie_path = f.name
+    
+    # 2. 設定 yt-dlp 參數
     ydl_opts = {
-        'format': 'worstaudio/worst', # 下載最低畫質音訊以節省流量
+        'format': 'worstaudio/worst',
         'outtmpl': 'temp_%(id)s.%(ext)s',
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
             'preferredquality': '64'
         }],
-        'quiet': False,  # 開啟 log 以便除錯
-        'no_warnings': False,
-        # 模擬一般瀏覽器請求
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'quiet': True,
+        'no_warnings': True,
         'nocheckcertificate': True,
+        # 關鍵：指定餅乾檔案
+        'cookiefile': cookie_path,
+        # 增加偽裝 User-Agent
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     }
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            return pathlib.Path(f"temp_{info['id']}.mp3")
+            output_path = pathlib.Path(f"temp_{info['id']}.mp3")
+            
+            # 3. 下載成功後，刪除餅乾暫存檔 (保持清潔)
+            if cookie_path and os.path.exists(cookie_path):
+                os.remove(cookie_path)
+                
+            return output_path
+            
     except Exception as e:
-        # 關鍵修改：直接在前端顯示錯誤，讓你知道發生什麼事
-        st.error(f"⚠️ 下載核心錯誤: {str(e)}")
-        print(f"Download Error: {e}")
+        # 錯誤處理
+        if cookie_path and os.path.exists(cookie_path):
+            os.remove(cookie_path)
+            
+        st.error(f"⚠️ 下載失敗 (請確認 Secrets 餅乾是否過期): {e}")
         return None
 
 def get_gemini_model():
@@ -159,3 +180,4 @@ def compare_trends(gooaye_report, miula_report):
     except Exception as e:
 
         return f"對照分析失敗: {e}"
+
