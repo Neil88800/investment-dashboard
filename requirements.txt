@@ -4,3 +4,5 @@ google-generativeai
 pandas
 markdown
 ffmpeg-python
+gspread
+oauth2client
