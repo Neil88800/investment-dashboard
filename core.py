@@ -6,6 +6,7 @@ import os
 import time
 import pathlib
 import warnings
+import tempfile
 from types import SimpleNamespace
 from datetime import datetime
 import streamlit as st # 用於讀取 secrets
@@ -72,14 +73,13 @@ def get_latest_video_robust(channel_url):
 def download_audio(url):
     cookie_path = None
     
-    # 1. 檢查 Secrets 裡有沒有餅乾，有的話做成暫存檔
+    # 1. 處理 Cookies (如果有的話還是留著，作為備用)
     if "youtube_cookies" in st.secrets:
-        # 建立一個暫存檔案來放餅乾
         with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
             f.write(st.secrets["youtube_cookies"])
             cookie_path = f.name
-    
-    # 2. 設定 yt-dlp 參數
+
+    # 2. 設定 yt-dlp 參數 (關鍵修正)
     ydl_opts = {
         'format': 'worstaudio/worst',
         'outtmpl': 'temp_%(id)s.%(ext)s',
@@ -91,29 +91,44 @@ def download_audio(url):
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
-        # 關鍵：指定餅乾檔案
-        'cookiefile': cookie_path,
-        # 增加偽裝 User-Agent
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        
+        # --- 關鍵修正開始 ---
+        # 1. 強制使用 Android 客戶端 (Android API 對雲端 IP 容忍度較高)
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'ios']
+            }
+        },
+        # 2. 移除快取，避免舊的失敗紀錄影響新的嘗試
+        'cachedir': False, 
+        # --- 關鍵修正結束 ---
     }
-    
+
+    # 如果有餅乾檔案，就加入設定
+    if cookie_path:
+        ydl_opts['cookiefile'] = cookie_path
+
     try:
+        # 嘗試下載
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # 這裡不設定 user_agent，讓 yt-dlp 根據 android client 自動切換
             info = ydl.extract_info(url, download=True)
             output_path = pathlib.Path(f"temp_{info['id']}.mp3")
             
-            # 3. 下載成功後，刪除餅乾暫存檔 (保持清潔)
+            # 清理餅乾暫存
             if cookie_path and os.path.exists(cookie_path):
                 os.remove(cookie_path)
                 
             return output_path
             
     except Exception as e:
-        # 錯誤處理
+        # 清理餅乾暫存
         if cookie_path and os.path.exists(cookie_path):
             os.remove(cookie_path)
             
-        st.error(f"⚠️ 下載失敗 (請確認 Secrets 餅乾是否過期): {e}")
+        st.error(f"⚠️ 下載失敗 (Android 模式也失敗): {str(e)}")
+        # 印出更多除錯資訊到後台
+        print(f"Download Error: {e}")
         return None
 
 def get_gemini_model():
@@ -180,4 +195,5 @@ def compare_trends(gooaye_report, miula_report):
     except Exception as e:
 
         return f"對照分析失敗: {e}"
+
 
